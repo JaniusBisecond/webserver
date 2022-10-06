@@ -15,7 +15,7 @@ class HttpServer
 public:
 	static int epollfd_;
 	static int usernum_;
-	const char *ROOT_PATH = "/home/janius/projects/vscode_webserver/resources";
+	const char *ROOT_PATH = "/home/janius/projects/webserver/resources";
 	const int BUF_SIZE = 4096; //读写缓冲区大小
 	const int SAVE_SIZE = 128;
 	int FILE_SIZE = SAVE_SIZE;
