@@ -33,7 +33,8 @@ HttpServer &HttpServer::operator=(const HttpServer &rhs)
 {
 	this->fd_ = rhs.fd_;
 	this->addr_ = rhs.addr_;
-	this->code_ = rhs.OK;
+	this->code_ = rhs.code_;
+	this->linestate_ = rhs.linestate_;
 
 	delete[] this->buf_;
 	this->buf_ = new char[BUF_SIZE];
@@ -84,7 +85,8 @@ void HttpServer::Init(int fd_, sockaddr_in addr)
 {
 	this->fd_ = fd_;
 	this->addr_ = addr;
-	this->code_ = OK;
+	this->code_ = Parseing;
+	this->linestate_ = CHECK_STATE_REQUESTLINE;
 	++usernum_;
 
 	this->buf_ = new char[BUF_SIZE];
@@ -106,6 +108,17 @@ void HttpServer::CloseConnect()
 	if (fd_ != -1)
 	{
 		printf("close connect fd : %d ,ip : %d\n", fd_, addr_.sin_addr.s_addr);
+		if (buf_)
+		{
+			delete[] buf_;
+			buf_ = nullptr;
+		}
+		if (response_)
+		{
+			delete[] response_;
+			response_ = nullptr;
+		}
+
 		epoll_ctl(epollfd_, EPOLL_CTL_DEL, fd_, NULL);
 		--usernum_;
 		fd_ = -1;
@@ -114,6 +127,12 @@ void HttpServer::CloseConnect()
 
 bool HttpServer::Read()
 {
+	if (buf_ == nullptr)
+	{
+		this->buf_ = new char[BUF_SIZE];
+		memset(buf_, 0, BUF_SIZE);
+		this->prebuf_ = this->buf_;
+	}
 	memset(buf_, 0, BUF_SIZE);
 	int n = 0, readnum = 0;
 	while ((readnum = recv(fd_, buf_ + n, BUF_SIZE, MSG_DONTWAIT)) > 0)
@@ -131,7 +150,7 @@ bool HttpServer::Read()
 		CloseConnect();
 		return true;
 	}
-	printf("收到新的请求:\n%s\n", buf_);
+	// printf("收到新的请求:\n%s\n", buf_);
 	return true;
 }
 
@@ -140,6 +159,10 @@ bool HttpServer::Write()
 	//发送内容
 	int writenum = 0;
 	int written = 0;
+	if(response_ == nullptr)
+	{
+		return false;
+	}
 	int len = strlen(response_);
 	while (writenum = send(fd_, response_ + written, len - written, 0) > 0)
 	{
@@ -151,6 +174,8 @@ bool HttpServer::Write()
 			return false;
 		}
 	}
+	delete[] response_;
+	response_ = nullptr;
 	return true;
 }
 
@@ -179,6 +204,7 @@ bool HttpServer::Process()
 	ev.events = EPOLLOUT | EPOLLET;
 	ev.data.fd = fd_;
 	epoll_ctl(epollfd_, EPOLL_CTL_MOD, fd_, &ev);
+	printf("正确的请求报文！\n");
 	return true;
 }
 
@@ -211,7 +237,7 @@ const char *HttpServer::GetLine()
 	return nullptr;
 }
 
-HttpServer::Code HttpServer::ParseLine(const char *line)
+HttpServer::Code HttpServer::ParseRequestLine(const char *line)
 {
 	////解析GET
 	char word[SAVE_SIZE];
@@ -261,7 +287,7 @@ HttpServer::Code HttpServer::ParseLine(const char *line)
 	memset(word, 0, SAVE_SIZE);
 	n = strcspn(line, " ");
 	stpncpy(word, line, n);
-	if (strcmp(word, "HTTP/1.1") == 0)
+	if (strcmp(word, "HTTP/1.1") == 0 || strcmp(word, "HTTP/1.0") == 0)
 	{
 		strcpy(version_, word);
 		line += n + 1;
@@ -271,80 +297,89 @@ HttpServer::Code HttpServer::ParseLine(const char *line)
 		code_ = BadRequest;
 		return code_;
 	}
+	linestate_ = CHECK_STATE_HEADER;
 	return code_;
 }
 
 HttpServer::Code HttpServer::ParseHeader(const char *header)
 {
-	////解析GET
+	if(strcmp(header,"\r\n") == 0)
+	{
+		linestate_ = CHECK_STATE_CONTENT;
+		code_ = OK;
+		return code_;
+	}
+	//开始解析
 	char word[SAVE_SIZE];
 	memset(word, 0, SAVE_SIZE);
 	int n = strcspn(header, " ");
 	stpncpy(word, header, n);
+
 	if (strcmp(word, "Host:") == 0)
 	{
 		header += n + 1;
-		n = strcspn(header, " ");
 		strcpy(host_, header);
-		return OK;
+		code_ = Parseing;
+		return Parseing;
 	}
-	// else if (...)  //其他头部
-	//{
-	//
-	//
-	// }
-	// else			 //出错
-	//{
-	//	code_ = BadRequest;
-	//	return code_;
-	// }
-	return OK; // 没写完，暂时OK
+	else if(strcmp(word, "Connection:") == 0)
+	{
+		//todo
+
+		//
+		code_ = Parseing;
+		return Parseing;
+	}
+	else 
+	{
+		//unknown header
+	}
+	return code_;
 }
 
 bool HttpServer::Parse()
 {
-	const char *line = GetLine();
-	if (line == nullptr)
+	const char *line ;
+	while (line = GetLine())
 	{
-		code_ = BadRequest;
-		// todo
-
-		return false;
-	}
-	//解析请求行
-	if (ParseLine(line) != OK)
-	{
-		// todo
-		// badrequest
-		return false;
-	}
-	//解析请求头
-	line = GetLine();
-	while (line != nullptr)
-	{
-		if (strcmp(line, "\r\n") == 0)
+		switch (linestate_)
 		{
-			//解析来是请求数据
+		case CHECK_STATE_REQUESTLINE:
+		{
+			if (ParseRequestLine(line) == BadRequest)
+			{
+				// todo
+				// badrequest
+				return false;
+			}
 			break;
 		}
-		else if (ParseHeader(line) == OK)
+		case CHECK_STATE_HEADER:
 		{
-			line = GetLine();
+			if (ParseHeader(line) == BadRequest)
+			{
+				// todo
+				// badrequest
+				return false;
+			}
+			else if(code_ == OK)
+			{
+
+			}
+			break;
 		}
-		else
+		case CHECK_STATE_CONTENT:
 		{
-			// todo
-			// badrequest
-			return false;
+
+			break;
 		}
-	}
-	if (line == nullptr)
-	{
-		code_ = BadRequest;
-		return false;
+
+		default:
+			break;
+		}
 	}
 
-	return true;
+	return code_ == OK ? true : false;
 }
 
 bool HttpServer::GenResponse(char *response_)
@@ -355,7 +390,7 @@ bool HttpServer::GenResponse(char *response_)
 		path_ = new char[SAVE_SIZE];
 		strcpy(path_, ROOT_PATH);
 		strcat(path_, url_);
-		printf("请求资源 : %s\n\n\n\n",path_);
+		printf("请求资源 : %s\n\n\n\n", path_);
 		//添加Content-Length
 		struct stat filestat;
 		if (stat(path_, &filestat) != 0)
