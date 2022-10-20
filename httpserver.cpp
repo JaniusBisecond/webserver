@@ -166,7 +166,11 @@ bool HttpServer::Read()
 		CloseConnect();
 		return true;
 	}
-
+	// printf("request:\n%s",buf_);
+	//每次读入部分需要重新初始化
+	prebuf_ = buf_;
+	code_ = Parseing;
+	linestate_ = CHECK_STATE_REQUESTLINE;
 	return true;
 }
 
@@ -177,6 +181,7 @@ bool HttpServer::Write()
 	while (1)
 	{
 		send = writev(fd_, iov_, iov_count_);
+		// printf("send :%d\n\n",send);
 		if (send < 0)
 		{
 			delete[] response_;
@@ -237,11 +242,7 @@ bool HttpServer::Process()
 	}
 
 	//添加epollout,等待缓冲区能写
-	epoll_event ev;
-	ev.events = EPOLLOUT | EPOLLET | EPOLLIN;
-	ev.data.fd = fd_;
-	epoll_ctl(epollfd_, EPOLL_CTL_MOD, fd_, &ev);
-	// printf("正确的请求报文！\n");
+	modfd(epollfd_, fd_, EPOLLOUT);
 	return true;
 }
 
@@ -323,6 +324,11 @@ HttpServer::Code HttpServer::ParseRequestLine(const char *line)
 		else
 		{
 			int filefd = open(path_, O_RDONLY);
+			if(filefd < 0)
+			{
+				perror("file open");
+				code_ = BadRequest;
+			}
 			fileaddress_ = (char *)mmap(0, filestat_.st_size, PROT_READ, MAP_PRIVATE, filefd, 0); //记得mummap
 			close(filefd);
 		}
@@ -509,7 +515,7 @@ bool HttpServer::AddContentLength(const size_t &filesize)
 
 bool HttpServer::AddContentType()
 {
-	return AddResponse("%s", "Content-Type: text/html; charset=UTF-8\r\n");
+	return AddResponse("%s", "Content-Type: text/html\r\n");
 }
 
 bool HttpServer::AddBlankLine()

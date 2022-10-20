@@ -27,7 +27,7 @@ ThreadPool::ThreadPool(int queue_size, int thread_num):queue_size(queue_size),th
 	}
 	for (int i = 0; i < thread_num; ++i)
 	{
-		printf("创建第%d个线程\n", i + 1);
+		// printf("创建第%d个线程\n", i + 1);
 		if (pthread_create(&threads->at(i), NULL, Work, this) != 0)
 		{
 			delete[] threads;

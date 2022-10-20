@@ -129,7 +129,9 @@ int main(int argc , char** argv)
 				if(httpservers[fd].Read())
 				{
 					pool.AddTask(&httpservers[fd]);
+					// httpservers[fd].Process();
 				}
+				
 			}
 			else if(events[i].events & EPOLLOUT)
 			{
