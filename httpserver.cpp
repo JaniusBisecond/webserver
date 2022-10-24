@@ -134,8 +134,8 @@ void HttpServer::CloseConnect()
 
 		epoll_ctl(epollfd_, EPOLL_CTL_DEL, fd_, NULL);
 		--usernum_;
-		fd_ = -1;
 		close(fd_);
+		fd_ = -1;
 	}
 }
 
@@ -196,6 +196,7 @@ bool HttpServer::Write()
 				munmap(fileaddress_, filestat_.st_size);
 				fileaddress_ = nullptr;
 			}
+			CloseConnect();
 			return false;
 		}
 		havesend += send;
