@@ -17,6 +17,17 @@
 const int MAX_EVENT_NUMBER = 10000;//epoll的最大监听事件数
 const int MAX_FD = 65536;		   //最大保持http的fd数量
 
+void setnoblocking(int fd)
+{
+	int old_option = fcntl(fd, F_GETFL);
+	int new_option = old_option | O_NONBLOCK;
+	if (fcntl(fd, F_SETFL, new_option) == -1)
+	{
+		perror("设置非阻塞");
+		exit(-1);
+	}
+}
+
 int main(int argc , char** argv)
 {
 	//获取port
@@ -48,6 +59,7 @@ int main(int argc , char** argv)
 	addr_server.sin_port = htons(port);
 	int reuse = 1;
 	setsockopt(fd_listen, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
+	setnoblocking(fd_listen);
 	if ( bind(fd_listen, (sockaddr*)&addr_server, sizeof(addr_server))== -1)
 	{
 		printf("绑定socket失败！%s\n",strerror(errno));
@@ -95,34 +107,40 @@ int main(int argc , char** argv)
 			int fd = events[i].data.fd;
 			if (fd == fd_listen)//建立新的连接
 			{
-				sockaddr_in addr_clinet;
-				memset(&addr_clinet, 0, sizeof(addr_clinet));
-				socklen_t len_addr_clinet = sizeof(addr_clinet);
-				int fd_client = accept(fd_listen, (sockaddr*)&addr_clinet, &len_addr_clinet);
-				if (fd_client < 0)
+				while(1)
 				{
-					printf("建立连接失败\n");
-					exit(1);
-				}
+					sockaddr_in addr_clinet;
+					memset(&addr_clinet, 0, sizeof(addr_clinet));
+					socklen_t len_addr_clinet = sizeof(addr_clinet);
+					int fd_client = accept(fd_listen, (sockaddr*)&addr_clinet, &len_addr_clinet);
+					if (fd_client < 0)
+					{
+						if(errno == EAGAIN || errno == EWOULDBLOCK)
+						{
+							break;
+						}
+						printf("建立连接失败\n");
+						exit(1);
+					}
 
-				memset(&event, 0, sizeof(event));
-				event.data.fd = fd_client;
-				event.events = EPOLLET | EPOLLIN;
-				if (epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd_client, &event) < 0)
-				{
-					printf("epoll添加失败\n");
-					exit(1);
-				}
+					memset(&event, 0, sizeof(event));
+					event.data.fd = fd_client;
+					event.events = EPOLLET | EPOLLIN;
+					if (epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd_client, &event) < 0)
+					{
+						printf("epoll添加失败\n");
+						exit(1);
+					}
 
-				int old_option = fcntl(fd_client, F_GETFL);
-				int new_option = old_option | O_NONBLOCK;
-				if (fcntl(fd_client, F_SETFL, new_option) == -1)
-				{
-					perror("设置非阻塞");
-					exit(1);
+					int old_option = fcntl(fd_client, F_GETFL);
+					int new_option = old_option | O_NONBLOCK;
+					if (fcntl(fd_client, F_SETFL, new_option) == -1)
+					{
+						perror("设置非阻塞");
+						exit(1);
+					}
+					httpservers[fd_client].Init(fd_client, addr_clinet);
 				}
-
-				httpservers[fd_client].Init(fd_client, addr_clinet);
 			}
 			else if (events[i].events & EPOLLIN)
 			{

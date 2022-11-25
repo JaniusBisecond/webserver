@@ -9,6 +9,10 @@
 #include <sys/stat.h>
 #include <sys/epoll.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/uio.h>
 
 class HttpServer
 {
@@ -59,13 +63,29 @@ public:
 	bool Write();
 	bool Process();
 	void CloseConnect();
+	void modfd(int epollfd, int fd, int ev);
 
 private:
 	const char *GetLine();
 	Code ParseRequestLine(const char *line);
 	Code ParseHeader(const char *header);
 	bool GenResponse(char *response);
-	bool Parse();
+	Code Parse();
+	
+	template<typename T>										//可变参数传入
+	const T& VaArg(const T& t);
+	const char* VaArg(const char*& str);
+	template<typename...Args>
+	bool AddResponse(const char* format, const Args&... rest);
+	bool AddStatusLine(Code code,const char* info);
+	bool AddHeaders(const size_t& filesize);
+	bool AddContentLength(const size_t& filesize);
+	bool AddContentType();
+	bool AddBlankLine();
+	bool AddLinger();
+	bool AddContent(const char* str);
+	
+
 
 private:
 	int fd_;
@@ -73,11 +93,18 @@ private:
 	char *buf_; 	 //接收请求
 	char *prebuf_;
 	char *response_; // 响应内容
+	int response_idx_;//响应追加指针
 	Method method_;  //请求方法
 	char *url_;
 	char *version_;
 	char *host_;
 	Code code_;
 	char *path_;
+	char *fileaddress_;
+	bool keepalive_;
+	struct stat filestat_;
 	CheckState linestate_; //行解析状态
+	iovec iov_[2];
+	int iov_count_;
+	int sendnum_;
 };
