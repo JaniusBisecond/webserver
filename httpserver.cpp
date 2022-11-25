@@ -181,7 +181,6 @@ bool HttpServer::Write()
 	while (1)
 	{
 		send = writev(fd_, iov_, iov_count_);
-		// printf("send :%d\n\n",send);
 		if (send < 0)
 		{
 			delete[] response_;
@@ -244,6 +243,7 @@ bool HttpServer::Process()
 
 	//添加epollout,等待缓冲区能写
 	modfd(epollfd_, fd_, EPOLLOUT);
+	printf("process oveer\n");
 	return true;
 }
 
@@ -404,6 +404,7 @@ HttpServer::Code HttpServer::ParseHeader(const char *header)
 HttpServer::Code HttpServer::Parse()
 {
 	const char *line;
+	
 	while (line = GetLine())
 	{
 		switch (linestate_)
@@ -412,10 +413,12 @@ HttpServer::Code HttpServer::Parse()
 		{
 			if (ParseRequestLine(line) == BadRequest)
 			{
+
 				return code_;
 			}
 			else if (code_ == NotFound)
 			{
+
 				return code_;
 			}
 			break;
@@ -424,6 +427,7 @@ HttpServer::Code HttpServer::Parse()
 		{
 			if (ParseHeader(line) == BadRequest)
 			{
+
 				return code_;
 			}
 			else if (code_ == OK)
@@ -541,3 +545,4 @@ void HttpServer::modfd(int epollfd, int fd, int ev)
 	event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
 	epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
+

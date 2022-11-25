@@ -65,7 +65,6 @@ public:
 	void CloseConnect();
 	void modfd(int epollfd, int fd, int ev);
 
-
 private:
 	const char *GetLine();
 	Code ParseRequestLine(const char *line);
